@@ -12,9 +12,10 @@ import matplotlib.pyplot as plt
 ##### GPU & stuff config
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
+# NO GPU for the moment
+#os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+#config = tf.ConfigProto()
+#config.gpu_options.allow_growth = True
 
 ############# data creation ################
 
@@ -99,12 +100,12 @@ labels = np.eye(max(labels)+1, dtype=np.int32)[labels]  # one-hot encoding of la
 threshold = 0.01
 learning_rate = 0.01
 state_dim = 5
-tf.reset_default_graph()
+tf.compat.v1.reset_default_graph()
 input_dim = inp.shape[1]
 output_dim = labels.shape[1]
 max_it = 50
 num_epoch = 10000
-optimizer = tf.train.AdamOptimizer
+optimizer = tf.optimizers.Adam()
 
 # initialize state and output network
 net = n.Net(input_dim, state_dim, output_dim)
@@ -115,7 +116,7 @@ print(param)
 
 tensorboard = False
 
-g = GNN.GNN(net, input_dim, output_dim, state_dim,  max_it, optimizer, learning_rate, threshold, graph_based=False, param=param, config=config,
+g = GNN.GNN(net, input_dim, output_dim, state_dim,  max_it, optimizer, learning_rate, threshold, graph_based=False, param=param, # config=config,
             tensorboard=tensorboard)
 
 # train the model

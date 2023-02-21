@@ -4,7 +4,7 @@ import datetime as time
 
 # class for the core of the architecture
 class GNN:
-    def __init__(self, net,  input_dim, output_dim, state_dim, max_it=50, optimizer=tf.train.AdamOptimizer, learning_rate=0.01, threshold=0.01, graph_based=False,
+    def __init__(self, net,  input_dim, output_dim, state_dim, max_it=50, optimizer=tf.optimizers.Adam(), learning_rate=0.01, threshold=0.01, graph_based=False,
                  param=str(time.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')), config=None, tensorboard=False, mask_flag=False):
         """
                create GNN instance. Feed this parameters:
