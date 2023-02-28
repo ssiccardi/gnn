@@ -116,8 +116,9 @@ print(param)
 
 tensorboard = False
 
+
 g = GNN.GNN(net, input_dim, output_dim, state_dim,  max_it, optimizer, learning_rate, threshold, graph_based=False, param=param, # config=config,
-            tensorboard=tensorboard)
+            config=None, tensorboard=tensorboard, mask_flag=False)
 
 # train the model
 count = 0

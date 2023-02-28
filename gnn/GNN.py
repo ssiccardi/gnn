@@ -3,12 +3,11 @@ import numpy as np
 import datetime as time
 
 # class for the core of the architecture
-class GNN:
-    def __init__(self, net,  input_dim, output_dim, state_dim, max_it=50, optimizer=tf.train.AdamOptimizer, learning_rate=0.01, threshold=0.01, graph_based=False,
+class GNN(tf.keras.layers.Layer):
+    def __init__(self, net,  input_dim, output_dim, state_dim, max_it=50, optimizer=tf.optimizers.Adam(), learning_rate=0.01, threshold=0.01, graph_based=False,
                  param=str(time.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')), config=None, tensorboard=False, mask_flag=False):
         """
                create GNN instance. Feed this parameters:
-
                :net:  Net instance - it contains state network, output network, initialized weights, loss function and metric;
                :input_dim: dimension of the input
                :output_dim: dimension of the output
@@ -21,14 +20,18 @@ class GNN:
                :param: name of the experiment
                :config: ConfigProto protocol buffer object, to set configuration options for a session
                :tensorboard:  boolean flag to activate tensorboard
+               :mask_flag:  boolean flag to activate semisupervised
                """
 
-        np.random.seed(0)
-        tf.set_random_seed(0)
+        super(GNN, self).__init__()         
+        np.random.seed(0) 
+        tf.random.set_seed(0)   
         self.tensorboard = tensorboard
         self.max_iter = max_it
         self.net = net
-        self.optimizer = optimizer(learning_rate, name="optim")
+        self.optimizer = optimizer  #obj optimizer type "Adam"
+        self.optimizer.learning_rate = learning_rate
+        self.optimizer.name = "optim"
         self.state_threshold = threshold
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -37,42 +40,47 @@ class GNN:
         self.mask_flag = mask_flag
         self.build()
 
-        self.session = tf.Session(config=config)
+        # sessione gestita automaticamente in TensorFlow 2.0
+        #self.session = tf.Session(config=config) #
         #self.session = tf.Session()
-        self.session.run(tf.global_variables_initializer())
-        self.init_l = tf.local_variables_initializer()
+        #self.session.run(tf.global_variables_initializer())
+        #self.init_l = tf.local_variables_initializer()
 
         # parameter to monitor the learning via tensorboard and to save the model
         if self.tensorboard:
             self.merged_all = tf.summary.merge_all(key='always')
             self.merged_train = tf.summary.merge_all(key='train')
             self.merged_val = tf.summary.merge_all(key='val')
-            self.writer = tf.summary.FileWriter('tmp/' + param, self.session.graph)
+            self.writer = tf.summary.create_file_writer('tmp/' + param) 
         # self.saver = tf.train.Saver()
         # self.save_path = "tmp/" + param + "saves/model.ckpt"
 
-    def VariableState(self):
-        '''Define placeholders for input, output, state, state_old, arch-node conversion matrix'''
-        # placeholder for input and output
 
-        self.comp_inp = tf.placeholder(tf.float32, shape=(None, self.input_dim), name="input")
-        self.y = tf.placeholder(tf.float32, shape=(None, self.output_dim), name="target")
+
+    def VariableState(self):
+        '''keras are the new way to create placeholders in TensorFlow 2.x. 
+        for input, output, state, state_old, arch-node conversion matrix'''
+        # tensor for input and output
+        self.comp_inp = tf.keras.Input(shape=(self.input_dim,), name="input")
+        self.y = tf.keras.Input(shape=(self.output_dim,), name="target")
 
         if self.mask_flag:
-            self.mask = tf.placeholder(tf.float32, name="mask")
+            self.mask = tf.keras.Input(shape=(), name="mask", dtype=tf.float32)
 
-        # state(t) & state(t-1)
-        self.state = tf.placeholder(tf.float32, shape=(None, self.state_dim), name="state")
-        self.state_old = tf.placeholder(tf.float32, shape=(None, self.state_dim), name="old_state")
+        # tensor for state(t) & state(t-1)
+        self.state = tf.keras.Input(shape=(self.state_dim,), name="state")
+        self.state_old = tf.keras.Input(shape=(self.state_dim,), name="old_state")
 
-        # arch-node conversion matrix
-        self.ArcNode = tf.sparse_placeholder(tf.float32, name="ArcNode")
+        # sparse tensor for arch-node conversion matrix
+        self.ArcNode = tf.keras.Input(shape=(None,), sparse=True, name="ArcNode")   # matrice sparsa
 
-        # node-graph conversion matrix
+        # sparse tensor for node-graph conversion matrix
         if self.graph_based:
-            self.NodeGraph = tf.sparse_placeholder(tf.float32, name="NodeGraph")
+            self.NodeGraph = tf.keras.Input(shape=(None,), sparse=True, name="NodeGraph")   # matrice sparsa
         else:
-            self.NodeGraph = tf.placeholder(tf.float32, name="NodeGraph")
+            self.NodeGraph = tf.keras.Input(shape=(None,), name="NodeGraph")
+
+
 
     def build(self):
         '''build the architecture, setting variable, loss, training'''
@@ -119,6 +127,7 @@ class GNN:
             if self.tensorboard:
                 self.summ_val_met = tf.summary.scalar('val_metric', self.val_met, collections=['always'])
 
+
     def convergence(self, a, state, old_state, k):
         with tf.variable_scope('Convergence'):
             # body of the while cicle used to iteratively calculate state
@@ -159,10 +168,11 @@ class GNN:
         return tf.logical_and(c1, c2)
 
 
+
     def Loop(self):
         # call to loop for the state computation and compute the output
         # compute state
-        with tf.variable_scope('Loop'):
+        with tf.compat.v1.variable_scope('Loop'): 
             k = tf.constant(0)
             res, st, old_st, num = tf.while_loop(self.condition, self.convergence,
                                                  [self.comp_inp, self.state, self.state_old, k])
@@ -172,12 +182,14 @@ class GNN:
             if self.graph_based:
                 # stf = tf.transpose(tf.matmul(tf.transpose(st), self.NodeGraph))
 
-                stf = tf.sparse_tensor_dense_matmul(self.NodeGraph, st)
+                stf = tf.sparse.sparse_dense_matmul(self.NodeGraph, st)
             else:
                 stf = st
             out = self.net.netOut(stf)
 
         return out, num
+
+
 
     def Train(self, inputs, ArcNode, target, step, nodegraph=0.0, mask=None):
         ''' train methods: has to receive the inputs, arch-node matrix conversion, target,
@@ -250,6 +262,8 @@ class GNN:
                 [self.val_loss, self.loss_op, self.metrics], feed_dict=fd_val)
         return loss_val, metr, loop[1]
 
+
+
     def Evaluate(self, inputs, st, st_old, ArcNode, target):
         '''evaluate method with initialized state -- not used for the moment: has to receive the inputs,
         initialization for state(t) and state(t-1),
@@ -307,3 +321,4 @@ class GNN:
               self.ArcNode: arcnode_}
         pr = self.session.run([self.loss_op], feed_dict=fd)
         return pr[0]
+
